@@ -1,4 +1,5 @@
 import torch
+import copy
 
 
 class LinearNorm(torch.nn.Module):
@@ -44,3 +45,9 @@ class ConvNorm(torch.nn.Module):
 
     def forward(self, x):
         return self.conv(x)    
+
+
+def clone_layers(layer, copy_num):
+    """ Quickly Create the Repetitive Modules"""
+    layers = torch.nn.ModuleList([copy.deepcopy(layer) for i in range(copy_num)])
+    return layers
