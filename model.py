@@ -8,61 +8,61 @@ from modules import *
 
 class TransformerEncoder(nn.Module):
 
-    def __init__(self):
+    def __init__(self, hp):
         super(TransformerEncoder, self).__init__()
         # input embedding stem
-        self.tok_emb = nn.Embedding(src_ntoken, args.nhid_tran)
-        self.pos_enc = PositionalEncoding()
-        self.dropout = nn.Dropout(args.embd_pdrop)
+        self.prenet = EncoderPrenet(hp.symbols_embedding_dim, hp.num_hidden)
+        self.pos_enc = PositionalEncoding(hp.num_hidden)
+        self.dropout = nn.Dropout(hp.dropout)
         # transformer
-        self.transform = nn.ModuleList([TransformerEncLayer() for _ in range(args.nlayers_transformer)])
+        self.transform = nn.ModuleList([TransformerEncLayer(hp.num_hidden, hp.num_ffn, hp.dropout, \
+         hp.num_heads, hp.attn_dropout) for _ in range(hp.num_layers)])
         # decoder head
-        self.ln_f = nn.LayerNorm(args.nhid_tran)
+        self.ln_f = nn.LayerNorm(hp.num_hidden)
         
 
     def forward(self, x, mask):
-        # WRITE YOUR CODE HERE
-        x = self.tok_emb(x)
+        x = self.prenet(x)
         x = self.pos_enc(x)
         x = self.dropout(x)
         for i in range(len(self.transform)):
             x = self.transform[i](x, mask)
-        x = self.ln_f(x)
         return x
 
 class TransformerDecoder(nn.Module):
-    def __init__(self):
+    def __init__(self, hp):
         super(TransformerDecoder, self).__init__()
-        self.tok_emb = nn.Embedding(trg_ntoken, args.nhid_tran)
-        self.pos_enc = PositionalEncoding()
-        self.dropout = nn.Dropout(args.embd_pdrop)
-        self.transform = nn.ModuleList([TransformerDecLayer() for _ in range(args.nlayers_transformer)])
-        self.ln_f = nn.LayerNorm(args.nhid_tran)
-        self.lin_out = nn.Linear(args.nhid_tran, trg_ntoken)
-        self.lin_out.weight = self.tok_emb.weight
+        self.prenet = DecoderPrenet(hp.n_mel_channels, hp.num_hidden, hp.num_hidden)
+        self.pos_enc = PositionalEncoding(hp.num_hidden)
+        self.dropout = nn.Dropout(hp.dropout)
+        self.transform = nn.ModuleList([TransformerDecLayer(hp.num_hidden, hp.num_ffn, hp.dropout, \
+         hp.num_heads, hp.attn_dropout) for _ in range(hp.num_layers)])
+        self.stop_linear = LinearNorm(hp.num_hidden, 1, w_init='sigmoid')
+        self.mel_linear = LinearNorm(hp.num_hidden, hp.n_mel_channels * hp.num_outputs)
+        self.post_net = PostNet(hp.num_hidden, hp.n_mel_channels, hp.num_outputs)
 
 
     def forward(self, x, enc_o, enc_mask):
-        # WRITE YOUR CODE HERE
-        x = self.tok_emb(x)
+        x = self.prenet(x)
         x = self.pos_enc(x)
         x = self.dropout(x)
+        dot_attn = []
         for i in range(len(self.transform)):
-            x = self.transform[i](x, enc_o, enc_mask)
-        x = self.ln_f(x)   
-        logits = self.lin_out(x)     
-        logits /= args.nhid_tran ** 0.5 # Scaling logits. Do not modify this
-        return logits
+            x, attn = self.transform[i](x, enc_o, enc_mask)
+            dot_attn.append(attn)
+        stop_token = self.stop_linear(x)
+        mel = self.mel_linear(x)
+        post_mel = self.PostNet(mel)
+        return mel, post_mel, stop_token, dot_attn
 
         
-class Transformer(nn.Module):
-    def __init__(self):
-        super(Transformer, self).__init__()
-        self.encoder = TransformerEncoder()
-        self.decoder = TransformerDecoder()
+class TransformerTTS(nn.Module):
+    def __init__(self, hp):
+        super(TransformerTTS, self).__init__()
+        self.encoder = TransformerEncoder(hp)
+        self.decoder = TransformerDecoder(hp)
         
     def forward(self, x, y, length_x, max_len=None, teacher_forcing=True):
-        # WRITE YOUR CODE HERE
         if length_x is not None:
             enc_mask = torch.ones(x.shape[0], x.shape[1]).to("cuda")
             for j in range(len(length_x)):
@@ -81,4 +81,4 @@ class Transformer(nn.Module):
                     dec_input = y[:,:1]
                 dec_output = self.decoder(dec_input, enc_o, enc_mask)
                 dec_input = torch.concat((dec_input, dec_output[:,-1:].argmax(-1)), dim=1)
-        return dec_output        
+        return dec_output

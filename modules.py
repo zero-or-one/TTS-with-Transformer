@@ -1,42 +1,39 @@
 import torch.nn as nn
 import torch
 import torch.nn.functional as F
-import math
 import numpy as np
-from collections import OrderedDict
 
 
-import hparams as hp
 from text.symbols import symbols
-from layers import LinearNorm, ConvNorm, clone_layers
+from layers import LinearNorm, ConvNorm
 
 
 class EncoderPrenet(nn.Module):
     """
     Prenet for Encoder. 3 convolutions and projection layers
     """
-    def __init__(self, embedding_dim, hidden_dim, dr=0.2):
+    def __init__(self, embedding_dim, hidden_dim, dr=0.1):
         """
-        -> embedding_dim: projected dimension for each phoneme
-        -> hidden_dim: dimension of hidden unit
-        -> dr: dropout rate
+        :param embedding_dim: projected dimension for each phoneme
+        :param hidden_dim: dimension of hidden unit
+        :param dr: dropout rate
         """
         super(EncoderPrenet, self).__init__()
         self.embed = nn.Embedding(len(symbols), embedding_dim, padding_idx=0)
 
         kernel_dim, pad = 5, int(np.floor(5 / 2))
-        self.conv1 = ConvNorm(in_channels=embedding_dim,
-                          out_channels=hidden_dim,
+        self.conv1 = ConvNorm(in_ch=embedding_dim,
+                          out_ch=hidden_dim,
                           kernel_dim=kernel_dim,
                           padding=pad,
                           w_init='relu')
-        self.conv2 = ConvNorm(in_channels=embedding_dim,
-                          out_channels=hidden_dim,
+        self.conv2 = ConvNorm(in_ch=embedding_dim,
+                          out_ch=hidden_dim,
                           kernel_dim=kernel_dim,
                           padding=pad,
                           w_init='relu')
-        self.conv3 = ConvNorm(in_channels=embedding_dim,
-                          out_channels=hidden_dim,
+        self.conv3 = ConvNorm(in_ch=embedding_dim,
+                          out_ch=hidden_dim,
                           kernel_dim=kernel_dim,
                           padding=pad,
                           w_init='relu')
@@ -45,9 +42,9 @@ class EncoderPrenet(nn.Module):
         self.bn2 = nn.BatchNorm1d(hidden_dim)
         self.bn3 = nn.BatchNorm1d(hidden_dim)
 
-        self.relu1 = nn.RelU()
-        self.relu2 = nn.RelU()
-        self.relu3 = nn.RelU()
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
+        self.relu3 = nn.ReLU()
 
         self.drop1 = nn.Dropout(dr)
         self.drop2 = nn.Dropout(dr)
@@ -73,19 +70,19 @@ class DecoderPrenet(nn.Module):
     """
     Prenet for Decoder. 2 fully connected layers
     """
-    def __init__(self, input_dim, hidden_dim, output_dim, dr=0.5):
+    def __init__(self, input_dim, hidden_dim, output_dim, dr=0.1):
         """
-        -> input_dim: dimension of input
-        -> hidden_dim: dimension of hidden unit
-        -> output_dim: dimension of output
-        -> dr: dropout rate
+        :param input_dim: dimension of input
+        :param hidden_dim: dimension of hidden unit
+        :param output_dim: dimension of output
+        :param dr: dropout rate
         """
         super(DecoderPrenet, self).__init__()
         self.fc1 = LinearNorm(input_dim, hidden_dim)
         self.fc2 = LinearNorm(hidden_dim, output_dim)
 
-        self.relu1 = nn.RelU()
-        self.relu2 = nn.RelU()
+        self.relu1 = nn.ReLU()
+        self.relu2 = nn.ReLU()
 
         self.drop1 = nn.Dropout(dr)
         self.drop2 = nn.Dropout(dr)
@@ -95,10 +92,15 @@ class DecoderPrenet(nn.Module):
         x = self.drop2(self.relu2(self.fc2(x)))
         return x
 
+
 class PositionalEncoding(nn.Module):
-    def __init__(self, max_len=4096):
-        super().__init__()
-        dim = args.nhid_tran
+    def __init__(self, num_hidden, max_len=4096, padding_idx=None, trainable_alpha=True):
+        super(PositionalEncoding, self).__init__()
+        if trainable_alpha is None:
+            self.alpha = nn.Parameter(torch.ones(1))
+        else:
+            self.alpha = 1.0
+        dim = num_hidden
         pos = np.arange(0, max_len)[:, None]
         i = np.arange(0, dim // 2)
         denom = 10000 ** (2 * i / dim)
@@ -107,36 +109,37 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = np.sin(pos / denom)
         pe[:, 1::2] = np.cos(pos / denom)
         pe = torch.from_numpy(pe).float()
-
+        # pad 0 for padding_idx
+        if padding_idx is not None:
+            pe[padding_idx] = 0.
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        # DO NOT MODIFY
-        return x + self.pe[:x.shape[1]]
+        return x + self.alpha*self.pe[:x.shape[1]]
 
 
-MAX_LEN = 100
 class MaskedMultiheadAttention(nn.Module):
     """
     A vanilla multi-head masked attention layer with a projection at the end.
     """
-    def __init__(self, mask=False):
+    def __init__(self, num_hidden, num_head, p, mask=False):
         super(MaskedMultiheadAttention, self).__init__()
-        assert args.nhid_tran % args.nhead == 0
+        assert num_hidden % num_head == 0
         # mask : whether to use 
         # key, query, value projections for all heads
-        self.key = nn.Linear(args.nhid_tran, args.nhid_tran)
-        self.query = nn.Linear(args.nhid_tran, args.nhid_tran)
-        self.value = nn.Linear(args.nhid_tran, args.nhid_tran)
+        self.key = nn.Linear(num_hidden, num_hidden)
+        self.query = nn.Linear(num_hidden, num_hidden)
+        self.value = nn.Linear(num_hidden, num_hidden)
         # regularization
-        self.attn_drop = nn.Dropout(args.attn_pdrop)
+        self.attn_drop = nn.Dropout(p)
         # output projection
-        self.proj = nn.Linear(args.nhid_tran, args.nhid_tran)
+        self.proj = nn.Linear(num_hidden, num_hidden)
         # causal mask to ensure that attention is only applied to the left in the input sequence
+        MAX_LEN = 1000
         if mask:
             self.register_buffer("mask", torch.tril(torch.ones(MAX_LEN, MAX_LEN)))
-        self.nhead = args.nhead
-        self.d_k = args.nhid_tran // args.nhead
+        self.nhead = num_head
+        self.d_k = num_hidden // num_head
 
     def forward(self, q, k, v, mask=None):
         # WRITE YOUR CODE HERE
@@ -167,64 +170,98 @@ class MaskedMultiheadAttention(nn.Module):
         x = x.reshape(Q.shape[0], x.shape[1], -1)
         x = self.proj(x)
 
+        return x, S
+
+
+class PostNet(nn.Module):
+    """
+    Post Convolutional Network (mel --> mel)
+    """
+    def __init__(self, num_hidden, num_mels, num_outputs):
+        """
+        :param num_hidden: dimension of hidden 
+        """
+        super(PostNet, self).__init__()
+        self.conv1 = ConvNorm(in_channels=num_mels * num_outputs,
+                          out_channels=num_hidden,
+                          kernel_size=5,
+                          padding=4,
+                          w_init='tanh')                
+        self.conv_list = nn.ModuleList([ConvNorm(in_channels=num_hidden, out_channels=num_hidden, kernel_size=5, padding=4, w_init='tanh') for _ in range(3)])
+        self.batch_norm_list = nn.ModuleList([nn.BatchNorm1d(num_hidden) for _ in range(3)])
+        
+        self.conv2 = ConvNorm(in_channels=num_hidden,
+                          out_channels=num_mels * num_outputs,
+                          kernel_size=5,
+                          padding=4)
+
+        self.pre_batchnorm = nn.BatchNorm1d(num_hidden)
+
+        self.dropout1 = nn.Dropout(p=0.1)
+        self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(3)])
+
+    def forward(self, x):
+        x = self.dropout1(torch.tanh(self.pre_batchnorm(self.conv1(x)[:, :, :-4])))
+        for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
+            x = dropout(torch.tanh(batch_norm(conv(x)[:, :, :-4])))
+        x = self.conv2(x)[:, :, :-4]
         return x
 
 
 class TransformerEncLayer(nn.Module):
-    def __init__(self):
+    def __init__(self, num_hidden, num_ffn, p, num_head, attn_p):
         super(TransformerEncLayer, self).__init__()
-        self.ln1 = nn.LayerNorm(args.nhid_tran)
-        self.ln2 = nn.LayerNorm(args.nhid_tran)
-        self.attn = MaskedMultiheadAttention()
-        self.dropout1 = nn.Dropout(args.resid_pdrop)
-        self.dropout2 = nn.Dropout(args.resid_pdrop)
+        self.ln1 = nn.LayerNorm(num_hidden)
+        self.ln2 = nn.LayerNorm(num_hidden)
+        self.attn = MaskedMultiheadAttention(num_hidden, num_head, attn_p)
+        self.dropout1 = nn.Dropout(p)
+        self.dropout2 = nn.Dropout(p)
         self.ff = nn.Sequential(
-            nn.Linear(args.nhid_tran, args.nff),
+            nn.Linear(num_hidden, num_ffn),
             nn.ReLU(), 
-            nn.Linear(args.nff, args.nhid_tran)
+            nn.Linear(num_ffn, num_hidden)
         )
 
     def forward(self, x, mask=None):
-        # WRITE YOUR CODE HERE
-        x = self.ln1(x)
         res = self.attn(x, x, x, mask)
         res = self.dropout1(res)
         x = x + res
-        x = self.ln2(x)
+        x = self.ln1(x)
         res = self.ff(x)
-        res = self.dropout1(res)
+        res = self.dropout2(res)
         x = x + res
+        x = self.ln2(x)
         return x
 
+
 class TransformerDecLayer(nn.Module):
-    def __init__(self):
+    def __init__(self, num_hidden, num_ffn, p, num_head, attn_p):
         super(TransformerDecLayer, self).__init__()
-        self.ln1 = nn.LayerNorm(args.nhid_tran)
-        self.ln2 = nn.LayerNorm(args.nhid_tran)
-        self.ln3 = nn.LayerNorm(args.nhid_tran)
-        self.dropout1 = nn.Dropout(args.resid_pdrop)
-        self.dropout2 = nn.Dropout(args.resid_pdrop)
-        self.dropout3 = nn.Dropout(args.resid_pdrop)
-        self.attn1 = MaskedMultiheadAttention(mask=True) # self-attention 
-        self.attn2 = MaskedMultiheadAttention() # tgt to src attention
+        self.ln1 = nn.LayerNorm(num_hidden)
+        self.ln2 = nn.LayerNorm(num_hidden)
+        self.ln3 = nn.LayerNorm(num_hidden)
+        self.dropout1 = nn.Dropout(p)
+        self.dropout2 = nn.Dropout(p)
+        self.dropout3 = nn.Dropout(p)
+        self.attn1 = MaskedMultiheadAttention(num_hidden, num_head, attn_p, mask=True) # self-attention 
+        self.attn2 = MaskedMultiheadAttention(num_hidden, num_head, attn_p, ) # tgt to src attention
         self.ff = nn.Sequential(
-            nn.Linear(args.nhid_tran, args.nff),
+            nn.Linear(num_hidden, num_ffn),
             nn.ReLU(), 
-            nn.Linear(args.nff, args.nhid_tran)
+            nn.Linear(num_ffn, num_hidden)
         )
         
     def forward(self, x, enc_o, enc_mask=None):
-        # WRITE YOUR CODE HERE
-        x = self.ln1(x)
         res = self.attn1(x, x, x)
         res = self.dropout1(res)
         x = x + res
-        x = self.ln2(x)
+        x = self.ln1(x)
         res = self.attn2(x, enc_o, enc_o, enc_mask)
         res = self.dropout2(res)
         x = x + res
-        x = self.ln3(x)
+        x = self.ln2(x)
         res = self.ff(x)      
         res = self.dropout3(res)
         x = x + res
-        return x  
+        x = self.ln3(x)
+        return x

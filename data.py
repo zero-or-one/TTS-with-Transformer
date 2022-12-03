@@ -5,10 +5,8 @@ import os
 import librosa
 import numpy as np
 import torch
-
-import hparams as hp
 from text import text_to_sequence
-from utils import load_wav_to_torch
+from hparams import BaseHparams
 
 
 class TTSDataset(Dataset):
@@ -122,22 +120,30 @@ class TextMelCollate():
         collated_sample = torch.LongTensor(text), torch.FloatTensor(mel), torch.FloatTensor(mel_input), torch.LongTensor(pos_text), torch.LongTensor(pos_mel), torch.LongTensor(text_length)
         return collated_sample
 
+
 def prepare_dataloaders(hparams):
     # Get data loaders
     dataset = TTSDataset(hparams)
+    train_size = int(hparams.split_ratio * len(dataset))
+    test_size = len(dataset) - train_size
+    train_dataset, test_dataset = torch.utils.data.random_split(dataset, [train_size, test_size])
     collate_fn = TextMelCollate()
-    data_loader = DataLoader(dataset, num_workers=1, shuffle=hparams.shuffle,
+    train_data_loader = DataLoader(train_dataset, num_workers=1, shuffle=hparams.shuffle,
                               batch_size=hparams.batch_size, pin_memory=False,
                               drop_last=False, collate_fn=collate_fn)
-    return data_loader
+    test_data_loader = DataLoader(test_dataset, num_workers=1, shuffle=hparams.shuffle,
+                              batch_size=hparams.batch_size, pin_memory=False,
+                              drop_last=False, collate_fn=collate_fn)
+    return train_data_loader, test_data_loader
 
 
 # Let's check
 if __name__ == '__main__':
+    hp = BaseHparams()
     print("Data is loading...")
-    dataloader = prepare_dataloaders(hp)
+    train_data_loader, test_data_loader = dataloader = prepare_dataloaders(hp)
     print("Data is prepared!")
-    for text, mel, mel_input, pos_text, pos_mel, text_len in dataloader:
+    for text, mel, mel_input, pos_text, pos_mel, text_len in train_data_loader:
         print('text', text[0])
         print('mel', mel[0])
         break
