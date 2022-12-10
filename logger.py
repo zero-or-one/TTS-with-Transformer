@@ -25,3 +25,4 @@ class TensorboardLogger():
                 'encoder_alpha': alpha_enc,
                 'decoder_alpha': alpha_dec,
             }, step)
+            
