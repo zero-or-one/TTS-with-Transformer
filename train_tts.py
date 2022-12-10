@@ -26,17 +26,21 @@ if __name__ == '__main__':
     seed_everything(hparams.seed)
     start_epoch = 0
 
+    if not os.path.exists(hparams.checkpoint_path):
+        os.makedirs(hparams.checkpoint_path)
+
     train_loader, valid_loader = prepare_dataloaders(hparams)
     print("Data loaded")
     
     logger = TensorboardLogger()
-    loss_fun = TotalLoss(hparams)
+    loss_fun = TotalLoss(hparams.stop_weight, hparams.attention_weight, hparams.attn_loss_bandwidth)
 
     model = TransformerTTS(hparams).to(device)
+    print("Model loaded")
     if args.n_gpus >  1:
         print("Using {} GPUs".format(args.n_gpus))
         model = torch.nn.DataParallel(model)
-    optimizer = torch.optim.Adam(model.parameters(), lr=hparams.lr)
+    optimizer = torch.optim.Adam(model.parameters(), lr=hparams.learning_rate)
     
     if args.checkpoint_path:
         print("Loading checkpoint from {}".format(args.checkpoint_path))
@@ -44,4 +48,5 @@ if __name__ == '__main__':
         optimizer.load_state_dict(torch.load('opt_' + args.checkpoint_path))
         start_epoch = int(args.checkpoint_path.split('_')[-1].split('.')[0])
     
-    train(model, optimizer, loss_fun, train_loader, valid_loader, logger, hparams, start_epoch)
+    train(model, optimizer, loss_fun, train_loader, valid_loader, logger, hparams, \
+         start_epoch)

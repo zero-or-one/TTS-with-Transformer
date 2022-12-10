@@ -14,7 +14,7 @@ class BaseHparams:
         self.batch_size=16
         self.mask_padding=True 
 
-        # Data Parameters
+        # Dataset Parameters
         self.csv_path = "../NeuralSpeech/Transformer-TTS/data/speaker_0/metadata.csv"
         self.audio_dir = '../NeuralSpeech/Transformer-TTS/data/speaker_0/wavs/'
         self.waveglow_path='/data2/sungjaecho/pretrained/waveglow_pretrained_700000.pt'
@@ -37,6 +37,10 @@ class BaseHparams:
         # Training Parameters
         self.epochs=1000
         self.save_interval=5
+        self.stop_weight = 1
+        self.attention_weight = 0
+        self.attn_loss_bandwidth = 50
+        self.checkpoint_path = './checkpoint/'
 
         # Model Parameters 
         self.n_symbols=len(symbols)

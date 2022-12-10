@@ -52,7 +52,7 @@ class TransformerDecoder(nn.Module):
             dot_attn.append(attn)
         stop_token = self.stop_linear(x)
         mel = self.mel_linear(x)
-        post_mel = self.PostNet(mel)
+        post_mel = self.post_net(mel)
         return mel, post_mel, stop_token, dot_attn
 
         
@@ -64,14 +64,14 @@ class TransformerTTS(nn.Module):
         
     def forward(self, x, y, length_x, max_len=None, teacher_forcing=True):
         if length_x is not None:
-            enc_mask = torch.ones(x.shape[0], x.shape[1]).to("cuda")
+            enc_mask = torch.ones(x.shape[0], x.shape[1]).to(x.device)
             for j in range(len(length_x)):
                 enc_mask[j, length_x[j]:] -= 1
         else:
             enc_mask = None
         enc_o = self.encoder(x, enc_mask)
         if teacher_forcing:
-            dec_output = self.decoder(y[:,:-1], enc_o, enc_mask)
+            mel, post_mel, stop_token, dot_attn = self.decoder(y, enc_o, enc_mask)
         else:
             trg_len = max_len
             if trg_len is None:
@@ -79,6 +79,7 @@ class TransformerTTS(nn.Module):
             for i in range(trg_len-1):
                 if i == 0:
                     dec_input = y[:,:1]
-                dec_output = self.decoder(dec_input, enc_o, enc_mask)
-                dec_input = torch.concat((dec_input, dec_output[:,-1:].argmax(-1)), dim=1)
-        return dec_output
+                mel, post_mel, stop_token, dot_attn = self.decoder(dec_input, enc_o, enc_mask)
+                #print(mel.shape, dec_input.shape)
+                dec_input = torch.cat((dec_input, mel[:,-1:, :]), dim=1)
+        return mel, post_mel, stop_token, dot_attn

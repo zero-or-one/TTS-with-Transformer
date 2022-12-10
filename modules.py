@@ -94,7 +94,7 @@ class DecoderPrenet(nn.Module):
 
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, num_hidden, max_len=4096, padding_idx=None, trainable_alpha=True):
+    def __init__(self, num_hidden, max_len=4096, padding_idx=None, trainable_alpha=None):
         super(PositionalEncoding, self).__init__()
         if trainable_alpha is None:
             self.alpha = nn.Parameter(torch.ones(1))
@@ -182,17 +182,17 @@ class PostNet(nn.Module):
         :param num_hidden: dimension of hidden 
         """
         super(PostNet, self).__init__()
-        self.conv1 = ConvNorm(in_channels=num_mels * num_outputs,
-                          out_channels=num_hidden,
-                          kernel_size=5,
+        self.conv1 = ConvNorm(in_ch=num_mels * num_outputs,
+                          out_ch=num_hidden,
+                          kernel_dim=5,
                           padding=4,
                           w_init='tanh')                
-        self.conv_list = nn.ModuleList([ConvNorm(in_channels=num_hidden, out_channels=num_hidden, kernel_size=5, padding=4, w_init='tanh') for _ in range(3)])
+        self.conv_list = nn.ModuleList([ConvNorm(in_ch=num_hidden, out_ch=num_hidden, kernel_dim=5, padding=4, w_init='tanh') for _ in range(3)])
         self.batch_norm_list = nn.ModuleList([nn.BatchNorm1d(num_hidden) for _ in range(3)])
         
-        self.conv2 = ConvNorm(in_channels=num_hidden,
-                          out_channels=num_mels * num_outputs,
-                          kernel_size=5,
+        self.conv2 = ConvNorm(in_ch=num_hidden,
+                          out_ch=num_mels * num_outputs,
+                          kernel_dim=5,
                           padding=4)
 
         self.pre_batchnorm = nn.BatchNorm1d(num_hidden)
@@ -201,10 +201,12 @@ class PostNet(nn.Module):
         self.dropout_list = nn.ModuleList([nn.Dropout(p=0.1) for _ in range(3)])
 
     def forward(self, x):
+        x = x.transpose(1, 2)
         x = self.dropout1(torch.tanh(self.pre_batchnorm(self.conv1(x)[:, :, :-4])))
         for batch_norm, conv, dropout in zip(self.batch_norm_list, self.conv_list, self.dropout_list):
             x = dropout(torch.tanh(batch_norm(conv(x)[:, :, :-4])))
         x = self.conv2(x)[:, :, :-4]
+        x = x.transpose(1, 2)
         return x
 
 
@@ -223,7 +225,7 @@ class TransformerEncLayer(nn.Module):
         )
 
     def forward(self, x, mask=None):
-        res = self.attn(x, x, x, mask)
+        res, _ = self.attn(x, x, x, mask)
         res = self.dropout1(res)
         x = x + res
         x = self.ln1(x)
@@ -252,11 +254,11 @@ class TransformerDecLayer(nn.Module):
         )
         
     def forward(self, x, enc_o, enc_mask=None):
-        res = self.attn1(x, x, x)
+        res, _ = self.attn1(x, x, x)
         res = self.dropout1(res)
         x = x + res
         x = self.ln1(x)
-        res = self.attn2(x, enc_o, enc_o, enc_mask)
+        res, attn = self.attn2(x, enc_o, enc_o, enc_mask)
         res = self.dropout2(res)
         x = x + res
         x = self.ln2(x)
@@ -264,4 +266,4 @@ class TransformerDecLayer(nn.Module):
         res = self.dropout3(res)
         x = x + res
         x = self.ln3(x)
-        return x
+        return x, attn

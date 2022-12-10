@@ -1,8 +1,9 @@
 import torch
 import torch.nn as nn
 
-class TotalLoss():
+class TotalLoss(nn.Module):
     def __init__(self, stop_weight=1, att_weight=0, bandwidth=50) -> None:
+        super(TotalLoss, self).__init__()
         self.mel_loss = nn.L1Loss()
         self.post_mel_loss = nn.L1Loss()
         self.stop_loss = nn.BCEWithLogitsLoss()

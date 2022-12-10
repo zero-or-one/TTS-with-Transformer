@@ -23,7 +23,7 @@ class LinearNorm(torch.nn.Module):
 
 class ConvNorm(torch.nn.Module):
     def __init__(self, in_ch, out_ch, kernel_dim=1, stride=1,
-        padding=0, dilation=1, bias=True, w_init='lienar'):
+        padding=0, dilation=1, bias=True, w_init='linear'):
         '''
         1D Convolution layer with normal initialization
         to avoid large or small weights

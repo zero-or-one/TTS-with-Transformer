@@ -15,9 +15,3 @@ def adjust_learning_rate(optimizer, lr, step_num, warmup_step=4000):
     for param_group in optimizer.param_groups:
         param_group['lr'] = lr
 
-def load_wav_to_torch(full_path):
-    sampling_rate, data = read(full_path)
-    if len(data.shape) == 2:
-        data = data.mean(axis=1)
-    return torch.FloatTensor(data.astype(np.float32)), sampling_rate
-
