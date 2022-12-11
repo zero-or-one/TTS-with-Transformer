@@ -22,8 +22,9 @@ def train_epoch(model, optimizer, loss_fun, train_loader, logger, step, epoch, l
         mel_input = mel_input.to(device)
         pos_text = pos_text.to(device)
         pos_mel = pos_mel.to(device)
+        stop_tokens = stop_tokens.to(device)
         
-        mel_pred, postnet_pred, stop_preds, attn = model.forward(text_input, mel_input, text_len)
+        mel_pred, postnet_pred, stop_preds, attn = model.forward(text_input, mel_input, pos_text, pos_mel)
 
         loss, mel_loss, postnet_loss, stop_loss, att_loss = loss_fun(mel_pred, mel, postnet_pred, stop_preds, stop_tokens, attn)
 
@@ -32,9 +33,11 @@ def train_epoch(model, optimizer, loss_fun, train_loader, logger, step, epoch, l
         avg_postnet_loss += (postnet_loss.item())
         avg_stop_loss += (stop_loss.item())
         avg_att_loss += (att_loss)
-
+        ''''
+        # we dpon't need to log the alphas for this model
         logger.log_alphas(model.module.encoder.pos_enc.alpha.data, \
             model.module.decoder.pos_enc.alpha.data, step)
+        '''
 
         optimizer.zero_grad()
         # Calculate gradients
@@ -95,8 +98,8 @@ def train(model, optimizer, loss_fun, train_loader, valid_loader, logger, hp, st
                  = validate(model, loss_fun, valid_loader)
 
             logger.log_validation(avg_loss, avg_mel_loss, avg_postnet_loss, avg_stop_loss, epoch)
-            torch.save(model.state_dict(), os.path.join(hp.checkpoint_path, 'checkpoint_{}.pth'.format(epoch)))
-            torch.save(optimizer.state_dict(), os.path.join(hp.checkpoint_path, 'opt_checkpoint_{}.pth'.format(epoch)))
+            torch.save(model.state_dict(), os.path.join(hp.checkpoint_path, 'checkpoint_{}.pth.tar'.format(epoch)))
+            torch.save(optimizer.state_dict(), os.path.join(hp.checkpoint_path, 'opt_checkpoint_{}.pth.tar'.format(epoch)))
 
     print("Training Completed")
 

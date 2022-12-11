@@ -12,17 +12,17 @@ class LinearNorm(torch.nn.Module):
         :param w_init: xavier initialization weight gain
         '''
         super(LinearNorm, self).__init__()
-        self.fc = torch.nn.Linear(in_dim, out_dim, bias=bias)
+        self.linear_layer = torch.nn.Linear(in_dim, out_dim, bias=bias)
         torch.nn.init.xavier_uniform_(
-            self.fc.weight,
+            self.linear_layer.weight,
             gain=torch.nn.init.calculate_gain(w_init))
     
     def forward(self, x):
-        return self.fc(x)
+        return self.linear_layer(x)
 
 
 class ConvNorm(torch.nn.Module):
-    def __init__(self, in_ch, out_ch, kernel_dim=1, stride=1,
+    def __init__(self, in_ch, out_ch, kernel_size=1, stride=1,
         padding=0, dilation=1, bias=True, w_init='linear'):
         '''
         1D Convolution layer with normal initialization
@@ -37,7 +37,7 @@ class ConvNorm(torch.nn.Module):
         :param w_init: xavier initialization weight gain
         ''' 
         super(ConvNorm, self).__init__()
-        self.conv = torch.nn.Conv1d(in_ch, out_ch, kernel_dim,
+        self.conv = torch.nn.Conv1d(in_ch, out_ch, kernel_size,
             stride, padding, dilation, bias=bias)
         torch.nn.init.xavier_uniform_(
             self.conv.weight,

@@ -16,7 +16,11 @@ class TotalLoss(nn.Module):
         post_mel_loss = self.post_mel_loss(postnet_pred, mel)
         stop_loss = self.stop_loss(stop_preds, stop_tokens)
         if self.att_weight != 0:
-            att_loss = self.allignment_loss(attn)
+            # let's calculate the diagonal loss for each attention matrix
+            att_loss = 0
+            for a in attn:
+                att_loss += self.allignment_loss(a)
+            att_loss /= len(attn)
         else:
             att_loss = 0
         loss = mel_loss + post_mel_loss + self.stop_weight*stop_loss + self.att_weight*att_loss
@@ -28,11 +32,11 @@ class DiagonalLoss(nn.Module):
         super().__init__()
         self.bandwidth = bandwidth
    
-
-    def forward(self, attn, T, S):
+    def forward(self, attn):
+        _, T, S = attn.shape
         b = self.bandwidth
         k = S // T
-        attn = torch.sum(A, 0) / attn.shape[0]
+        attn = torch.sum(attn, 0) / attn.shape[0]
         sum = 0
         for t in range(1, T-1):
             sum += torch.sum(attn[t, k*t-b:k*t+b-1], 0)

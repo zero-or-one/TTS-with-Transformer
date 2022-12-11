@@ -1,11 +1,8 @@
 import torch.nn as nn
-import torch as t
-
+import torch
+import numpy as np
 
 class Linear(nn.Module):
-    """
-    Linear Module
-    """
     def __init__(self, in_dim, out_dim, bias=True, w_init='linear'):
         """
         :param in_dim: dimension of input
@@ -15,11 +12,9 @@ class Linear(nn.Module):
         """
         super(Linear, self).__init__()
         self.linear_layer = nn.Linear(in_dim, out_dim, bias=bias)
-
         nn.init.xavier_uniform_(
             self.linear_layer.weight,
             gain=nn.init.calculate_gain(w_init))
-
     def forward(self, x):
         return self.linear_layer(x)
 
@@ -46,18 +41,13 @@ class Conv(nn.Module):
                               kernel_size=kernel_size, stride=stride,
                               padding=padding, dilation=dilation,
                               bias=bias)
-
         nn.init.xavier_uniform_(
             self.conv.weight, gain=nn.init.calculate_gain(w_init))
-
     def forward(self, x):
         x = self.conv(x)
         return x
     
 class Highwaynet(nn.Module):
-    """
-    Highway network
-    """
     def __init__(self, num_units, num_layers=4):
         """
         :param num_units: dimension of hidden unit
@@ -73,24 +63,17 @@ class Highwaynet(nn.Module):
             self.gates.append(Linear(num_units, num_units))
 
     def forward(self, input_):
-
         out = input_
-
         # highway gated function
         for fc1, fc2 in zip(self.linears, self.gates):
-
-            h = t.relu(fc1.forward(out))
-            t_ = t.sigmoid(fc2.forward(out))
-
+            h = torch.relu(fc1.forward(out))
+            t_ = torch.sigmoid(fc2.forward(out))
             c = 1. - t_
             out = h * t_ + out * c
 
         return out
 
 class CBHG(nn.Module):
-    """
-    CBHG Module
-    """
     def __init__(self, hidden_size, K=16, projection_size = 256, num_gru_layers=2, max_pool_kernel_size=2, is_post=False):
         """
         :param hidden_size: dimension of hidden unit
@@ -140,7 +123,6 @@ class CBHG(nn.Module):
                           batch_first=True,
                           bidirectional=True)
 
-
     def _conv_fit_dim(self, x, kernel_size=3):
         if kernel_size % 2 == 0:
             return x[:,:,:-1]
@@ -148,32 +130,22 @@ class CBHG(nn.Module):
             return x
 
     def forward(self, input_):
-
         input_ = input_.contiguous()
-        batch_size = input_.size(0)
-        total_length = input_.size(-1)
-
         convbank_list = list()
         convbank_input = input_
-
         # Convolution bank filters
         for k, (conv, batchnorm) in enumerate(zip(self.convbank_list, self.batchnorm_list)):
-            convbank_input = t.relu(batchnorm(self._conv_fit_dim(conv(convbank_input), k+1).contiguous()))
+            convbank_input = torch.relu(batchnorm(self._conv_fit_dim(conv(convbank_input), k+1).contiguous()))
             convbank_list.append(convbank_input)
-
         # Concatenate all features
-        conv_cat = t.cat(convbank_list, dim=1)
-
+        conv_cat = torch.cat(convbank_list, dim=1)
         # Max pooling
         conv_cat = self.max_pool(conv_cat)[:,:,:-1]
-
         # Projection
-        conv_projection = t.relu(self.batchnorm_proj_1(self._conv_fit_dim(self.conv_projection_1(conv_cat))))
+        conv_projection = torch.relu(self.batchnorm_proj_1(self._conv_fit_dim(self.conv_projection_1(conv_cat))))
         conv_projection = self.batchnorm_proj_2(self._conv_fit_dim(self.conv_projection_2(conv_projection))) + input_
-
         # Highway networks
         highway = self.highway.forward(conv_projection.transpose(1,2))
-        
         # Bidirectional GRU
         self.gru.flatten_parameters()
         out, _ = self.gru(highway)
